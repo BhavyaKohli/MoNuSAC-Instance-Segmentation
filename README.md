@@ -1,6 +1,6 @@
 # MoNuSAC-Instance-Segmentation
 
-> The following steps worked for me:
+> Steps to install the module for compatibility with current module versions
 > 
 > **1. Upgrade the scripts by using the following line on the root folder:**
 > 
