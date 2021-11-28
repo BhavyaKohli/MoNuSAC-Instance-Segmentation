@@ -1,0 +1,8 @@
+*.h5
+*.bat
+.python-version
+logs/
+MaskRCNN/
+Mask_RCNN/
+dataset/
+monusac/
