@@ -10,13 +10,13 @@
 > 
 > **2. Replace the following line:**
 > 
-> `mrcnn_bbox = layers.Reshape((-1, num_classes, 4), name="mrcnn_bbox")(x) ` with this this if-else code block:
+> `mrcnn_bbox = KL.Reshape((-1, num_classes, 4), name="mrcnn_bbox")(x) ` with this this if-else code block:
 > 
 > ```
 > if s[1]==None:
->     mrcnn_bbox = layers.Reshape((-1, num_classes, 4), name="mrcnn_bbox")(x)
+>     mrcnn_bbox = KL.Reshape((-1, num_classes, 4), name="mrcnn_bbox")(x)
 > else:
->     mrcnn_bbox = layers.Reshape((s[1], num_classes, 4), name="mrcnn_bbox")(x)
+>     mrcnn_bbox = KL.Reshape((s[1], num_classes, 4), name="mrcnn_bbox")(x)
 > ```
 > 
 > **3. Change the following line:**
