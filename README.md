@@ -1,48 +1,35 @@
 # MoNuSAC-Instance-Segmentation
 
-> Steps to install the module for compatibility with current module versions
-> 
-> **1. Upgrade the scripts by using the following line on the root folder:**
-> 
-> ` tf_upgrade_v2 --intree Mask_RCNN --inplace --reportfile report.txt`
-> 
-> This will automatically update the existing code to TF2. You will also get a list of changes made in report.txt
-> 
-> **2. Replace the following line:**
-> 
-> `mrcnn_bbox = KL.Reshape((-1, num_classes, 4), name="mrcnn_bbox")(x) ` with this this if-else code block:
-> 
-> ```
-> if s[1]==None:
->     mrcnn_bbox = KL.Reshape((-1, num_classes, 4), name="mrcnn_bbox")(x)
-> else:
->     mrcnn_bbox = KL.Reshape((s[1], num_classes, 4), name="mrcnn_bbox")(x)
-> ```
-> 
-> **3. Change the following line:**
-> 
-> `indices = tf.stack([tf.range(probs.shape[0]), class_ids], axis=1) ` with this line:
-> 
-> `indices = tf.stack([tf.range(tf.shape(probs)[0]), class_ids], axis = 1)`
-> 
-> **4. Now, you need to replace:**
-> 
-> ` from keras import saving` with:
-> 
-> `from tensorflow.python.keras import saving ` then you will also want to replace the lines in both if and else block:
-> 
-> `saving.load_weights_from_hdf5_group(f, layers) ` and so on with the follwoing lines, inside if and else block respectively:
-> 
-> `saving.hdf5_format.load_weights_from_hdf5_group_by_name(f, layers)`
-> 
-> `saving.hdf5_format.load_weights_from_hdf5_group(f, layers)`
->
-> **5. Replace KE.Layer with Layer**
-> 
-> after adding `from tensorflow.keras.layers import Layer` to the preamble
->
-> **6. Replace :**
-> 
-> `import keras.layers as KL` with `import tensorflow.keras.layers as KL`
->
-> Thanks to: @deluongo, @Trotts, @nielsuit227, @ibrahimLearning @mayurmahurkar
+Steps to install the mask-rcnn library and run test.ipynb:
+
+IMPORTANT: Tested with python version 3.7.x. If your base version is not 3.7, refer to [pyenv-win](https://github.com/pyenv-win/pyenv-win) for installing `pyenv`, a convenient way of managing multiple python versions on windows.
+
+Basic setup for a virtual environment:
+
+1. Navigate to the root directory ((path)/monusac-instance-segmentation) in cmd
+2. Run `python -m venv venv_name`
+3. For using jupyter, run `ipython kernel install --user --name=venv_name` <br> (For removing the kernel, run `jupyter-kernelspec uninstall venv_name`)
+
+With the same directory open in cmd:
+
+1. Install requirements from requirements.txt: <br>
+`pip install -r requirements.txt`
+2. Clone the [Matterport Mask_RCNN repository](https://github.com/matterport/Mask_RCNN): <br>
+`git clone https://github.com/matterport/Mask_RCNN`
+3. Change directory to Mask_RCNN in cmd using `cd Mask_RCNN`
+4. Run `python setup.py install` to install the mask-rcnn module
+5. Check installation using `pip show mask-rcnn`, expected output is:
+```
+Name: mask-rcnn
+Version: 2.1
+Summary: Mask R-CNN for object detection and instance segmentation
+Home-page: https://github.com/matterport/Mask_RCNN
+Author: Matterport
+Author-email: waleed.abdulla@gmail.com
+License: MIT
+Location: path\monusac-instance-segmentation\venv_name\lib\site-packages\mask_rcnn-2.1-py3.7.egg
+Requires:
+Required-by:
+```
+
+### Dataset folder and code for test.ipynb referred from [here](https://github.com/jackfrost1411/MaskRCNN) (found from a towards data science article).
