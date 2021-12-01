@@ -31,5 +31,11 @@ Location: path\monusac-instance-segmentation\venv_name\lib\site-packages\mask_rc
 Requires:
 Required-by:
 ```
+Main library versions to confirm:
+
+1. tensorflow-gpu == 1.15.0 <br>
+**Important**: training Mask-RCNN models on cpu is not practical, and that is why the -gpu version of tensorflow is installed. The program works for Cuda Toolkit v10.0 and cuDNN v7.6, with an Nvidia GTX 1650 Ti GPU. For setting up the environment, follow the steps in the tutorial given [here](https://towardsdatascience.com/installing-tensorflow-with-cuda-cudnn-and-gpu-support-on-windows-10-60693e46e781).
+1. keras == 2.2.5
+2. h5py == 2.10.0
 
 ### Dataset folder and code for test.ipynb referred from [here](https://github.com/jackfrost1411/MaskRCNN) (found from a towards data science article).
