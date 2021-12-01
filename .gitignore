@@ -1,5 +1,11 @@
 *.h5
 *.bat
 .python-version
-logs/
+
+# general directories to ignore
 ignore/
+Mask_RCNN/
+logs/
+
+# virtual environment folder
+monusac/
