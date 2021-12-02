@@ -2,13 +2,18 @@
 
 Steps to install the mask-rcnn library and run test.ipynb:
 
-IMPORTANT: Tested with python version 3.7.x. If your base version is not 3.7, refer to [pyenv-win](https://github.com/pyenv-win/pyenv-win) for installing `pyenv`, a convenient way of managing multiple python versions on windows.
+IMPORTANT: This code works with python version 3.7.x, since it uses tensorflow v1.15.0. If your base version is not 3.7, refer to [pyenv-win](https://github.com/pyenv-win/pyenv-win) for installing `pyenv`, a convenient way of managing multiple python versions on windows.
 
 Basic setup for a virtual environment:
-
-1. Navigate to the root directory ((path)/monusac-instance-segmentation) in cmd
-2. Run `python -m venv venv_name`
-3. For using jupyter, run `ipython kernel install --user --name=venv_name` <br> (For removing the kernel, run `jupyter-kernelspec uninstall venv_name`)
+1. Clone this repository: <br>
+`git clone https://github.com/BhavyaKohli/MoNuSAC-Instance-Segmentation`
+2. Navigate to the directory created by the clone, in cmd: <br>
+`cd monusac-instance-segmentation`
+3. Run `python -m venv venv_name` <br>
+(replace venv_name with the name of your choice)
+4. For using jupyter, run:<br>
+`ipython kernel install --user --name=venv_name` <br> 
+(For removing the kernel, run `jupyter-kernelspec uninstall venv_name`)
 
 With the same directory open in cmd:
 
@@ -27,7 +32,7 @@ Home-page: https://github.com/matterport/Mask_RCNN
 Author: Matterport
 Author-email: waleed.abdulla@gmail.com
 License: MIT
-Location: path\monusac-instance-segmentation\venv_name\lib\site-packages\mask_rcnn-2.1-py3.7.egg
+Location: (path)\monusac-instance-segmentation\venv_name\lib\site-packages\mask_rcnn-2.1-py3.7.egg
 Requires:
 Required-by:
 ```
