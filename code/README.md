@@ -1,0 +1,2 @@
+### Mask generation code referenced from https://github.com/ruchikaverma-iitg/MoNuSAC
+### 'sample_original' folder obtained from the dataset downloaded from https://monusac-2020.grand-challenge.org/Data/
