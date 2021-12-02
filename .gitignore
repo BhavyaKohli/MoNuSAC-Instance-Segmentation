@@ -4,7 +4,6 @@
 
 # general directories to ignore
 ignore/
-Mask_RCNN/
 logs/
 
 # virtual environment folder
