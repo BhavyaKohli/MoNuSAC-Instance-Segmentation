@@ -1,1 +1,1 @@
-### Dataset folder and code for test.ipynb referred from https://github.com/jackfrost1411/MaskRCNN.
+### Dataset folder and code for test.ipynb referenced from https://github.com/jackfrost1411/MaskRCNN.
