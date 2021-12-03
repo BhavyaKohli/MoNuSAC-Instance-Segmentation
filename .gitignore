@@ -8,3 +8,9 @@ logs/
 
 # virtual environment folder
 monusac/
+
+# in directory code/
+monusac/
+monusac_images_and_annotations/
+data/
+data_full/
