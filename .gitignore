@@ -14,3 +14,4 @@ monusac/
 monusac_images_and_annotations/
 data/
 data_part/
+__pycache__/
