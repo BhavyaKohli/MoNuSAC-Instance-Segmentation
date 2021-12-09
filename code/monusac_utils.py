@@ -9,7 +9,8 @@ import tifffile as tif
 import xml.etree.ElementTree as ET
 from skimage import draw
 
-import tqdm.notebook as tq          # For creating progress bars for "for" loops
+# For creating progress bars for "for" loops
+import tqdm.notebook as tq          
 
 # Data locations
 SLIDES_DIR = './data/slides/'
