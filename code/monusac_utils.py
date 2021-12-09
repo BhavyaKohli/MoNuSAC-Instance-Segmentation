@@ -17,16 +17,6 @@ MASKS_DIR = './data/masks/'
 ANNOTS_DIR = './data/annots/'
 
 label_mapping = {1: 'Epithelial', 2: 'Lymphocyte', 3: 'Macrophage', 4: 'Neutrophil'}
-'''# Lists with paths
-SLIDES = [SLIDES_DIR + filename for filename in os.listdir('./data/slides')]
-
-MASKS_TYPE = dict()
-MASKS_ALL = []
-for i in np.arange(1,5): 
-    MASKS_TYPE[i] =  [MASKS_DIR + str(i) + '/' + filename for filename in [x[2] for x in os.walk('./data/masks')][i]]
-    MASKS_ALL = MASKS_ALL + MASKS_TYPE[i]
-
-ANNOTS = [ANNOTS_DIR + filename for filename in os.listdir('./data/annots')]'''
 
 # Functions
 def from_svs(path, display = False, ax = None):
@@ -432,6 +422,5 @@ def estimate_num_cells(image, weights_path):
     if image.shape[:2] != (512,512):
         image = cv2.resize(image, (512,512))
     return model.predict(image)[0][0]
-
 
 
