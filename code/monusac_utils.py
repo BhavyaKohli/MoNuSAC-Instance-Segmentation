@@ -142,14 +142,14 @@ def generate_and_save_masks(src = './MoNuSAC_images_and_annotations/',
 
             for sub_image in sub_images:
                 img = from_svs(sub_image)
-                postfix = '_' + sub_image[-5]
+                suffix = '_' + sub_image[-5]
 
-                if slides: cv2.imwrite(os.path.join(dst_slides, patient_label + postfix + '.png'), img)
-                #shutil.copy(sub_image, os.path.join(dst_slides, patient_label + postfix + '.svs'))
+                if slides: cv2.imwrite(os.path.join(dst_slides, patient_label + suffix + '.png'), img)
+                #shutil.copy(sub_image, os.path.join(dst_slides, patient_label + suffix + '.svs'))
 
                 xml_file_name  = sub_image[:-4]
                 xml_file_name = xml_file_name+'.xml'
-                if annots: shutil.copy(xml_file_name, os.path.join(dst_annots, patient_label + postfix + '.xml'))
+                if annots: shutil.copy(xml_file_name, os.path.join(dst_annots, patient_label + suffix + '.xml'))
                 tree = ET.parse(xml_file_name)
                 root = tree.getroot()
 
@@ -187,7 +187,7 @@ def generate_and_save_masks(src = './MoNuSAC_images_and_annotations/',
                                 unique += 0.4
                                 mask[fill_row_coords, fill_col_coords] = unique
 
-                                mask_path = os.path.join(cell_type_dir, label + '_' + patient_label + postfix  + '.png')
+                                mask_path = os.path.join(cell_type_dir, label + '_' + patient_label + suffix  + '.png')
                                 if masks: cv2.imwrite(mask_path, mask)
 
     if slides: 
@@ -326,7 +326,7 @@ def num_cells(patient_id, annots_dir):
 
     return np.sum(cell_count)
 
-def combine_masks(mask):
+def combine_masks(mask, progress = False):
     '''
     Takes a mask of shape (X,Y,N) where (X,Y) are the dimensions and
     N is the number of sub-masks and merges them into a single array 
@@ -340,11 +340,15 @@ def combine_masks(mask):
         "mask"
     '''
     depth = mask.shape[2]
-    print(depth)
+    if progress: print(depth)
     m = np.dsplit(mask, depth)[0]
 
-    for i in tq.tqdm(range(depth)[1:]):
-        m = m + np.dsplit(mask, depth)[i]
+    if progress:
+        for i in tq.tqdm(range(depth)[1:]):
+            m = m + np.dsplit(mask, depth)[i]
+    else:
+        for i in range(depth)[1:]: 
+            m = m + np.dsplit(mask, depth)[i]
     return m
 
 def collect_masks_for_id(patient_id):
@@ -387,10 +391,222 @@ def modify_mask_values(mask, value):
             if mask[i][j] > 0: mask[i][j] = value
     return mask
 
+
 #############################################################################################
+# Cropping slides and masks based on number of cells
 #############################################################################################
 
+import pandas as pd
+import feather
+
+def load_mask(patient_id, return_counts = False):
+    global label_map
+    
+    label_map = {
+        'Epithelial': 1,
+        'Lymphocyte': 2,
+        'Macrophage': 3,
+        'Neutrophil': 4
+    }
+
+    annotations_path = f'./data/annots/{patient_id}.xml'
+
+    tree = ET.parse(annotations_path)
+    root = tree.getroot()
+    img = load_image(patient_id)
+    masks = dict()
+    labels = []
+    cell_count = [0,0,0,0,0]
+
+    count = 0
+    for k in range(len(root)):
+        for child in root[k]:
+            for x in child:
+                r = x.tag
+                if r == 'Attribute':
+                    label = x.attrib['Name']
+                    label_id = label_map[label]
+
+                if r == 'Region':
+                    binary_mask = np.zeros((img.shape[0], img.shape[1], 1), dtype = np.uint8)
+
+                    vertices = x[1]
+                    coords = np.zeros((len(vertices), 2))
+                    for i, vertex in enumerate(vertices):
+                        coords[i][0] = vertex.attrib['X']
+                        coords[i][1] = vertex.attrib['Y']
+
+                    vertex_row_coords = coords[:,0]
+                    vertex_col_coords = coords[:,1]
+
+                    fill_row_coords, fill_col_coords = skimage.draw.polygon(vertex_col_coords, vertex_row_coords, binary_mask.shape)
+
+                    binary_mask[fill_row_coords, fill_col_coords] = 1
+                    masks[count] = (binary_mask, label_id)
+                    labels.append(label_id)
+                    cell_count[label_id] += 1
+                    count += 1
+                    
+    keys = list(masks.keys())
+    net_mask = masks[keys[0]][0]
+    net_labels = [masks[keys[0]][1]]
+    for key in keys[1:]:
+        net_mask = np.concatenate((net_mask, masks[key][0]), axis = 2)
+        net_labels.append(masks[key][1])
+
+    #print(net_mask.shape)
+    #print(np.dsplit(net_mask, net_mask.shape[2]).shape)
+    
+    if not return_counts: return net_mask.astype(np.bool_), np.array(net_labels)
+    else: return net_mask.astype(np.bool_), np.array(net_labels), cell_count
+    
+def crop_image(slide, height, width):
+    img = Image.fromarray(slide)
+    img_width, img_height = img.size
+    for i in range(img_height//height):
+        for j in range(img_width//width):
+            box = (j*width, i*height, (j+1)*width, (i+1)*height)
+            yield img.crop(box)
+
+def crop_mask(mask, height, width):
+    masks = dict()
+    net_masks = dict()
+    
+    for i in range(mask.shape[2]):
+        masks[i] = dict()
+        slice = mask[:,:,i]
+        img = Image.fromarray(slice)
+        img_width, img_height = img.size
+        for j in range(img_height//height):
+            for k in range(img_width//width):
+                box = (k*width, j*height, (k+1)*width, (j+1)*height)
+                masks[i][f'{j}{k}'] = np.array(img.crop(box))
+    
+    net_masks = dict()
+    keys = list(masks.keys())
+    subkeys = list(masks[keys[0]].keys())
+    [m[:,:,i] for i in range(m.shape[2])] 
+    for i in range(len(subkeys)):    
+        net_masks[subkeys[i]] = np.stack(pd.DataFrame(masks).iloc[i].values, 2) 
+    
+    return net_masks
+
+def split(image, mask, patient_id, train, out_dir, height, width):
+    """
+    Splits the input image and mask into smaller parts of shape determined
+    by the "height" and "width" arguments \n
+
+    Arguments: \n
+    image - numpy array of shape (X,Y,3), contains the image of a slide 
+            as an array \n
+    mask - numpy array of shape (X,Y,N), contains the corresponding mask 
+           of the image argument \n
+    patient_id - string, the corresponding patient id for the image and mask
+                 described above \n
+    train - bool, determines whether to create the "train" or "val" sub-directory \n
+    height, width - integers, determine the shape of the output images \n
+
+    All smaller images are saved using the _00, _01,... suffixes after the 
+    patient_id.
+    """
+    image_dir = os.path.join(out_dir, 'train/slides') if train else os.path.join(out_dir, 'val/slides')
+    mask_dir = os.path.join(out_dir, 'train/masks') if train else os.path.join(out_dir, 'val/masks')
+
+    for i, piece in enumerate(crop_image(image, height, width)):
+        img = Image.new('RGB', (height, width))
+        img.paste(piece)
+        img_path = os.path.join(image_dir , patient_id + '_' + str(i).zfill(2) + '.png')
+        img.save(img_path)
+
+    cropped_masks = crop_mask(mask, height, width)
+
+    for i, key in zip(range(len(cropped_masks)), cropped_masks):
+        msk_path = os.path.join(mask_dir, patient_id + '_' + str(i).zfill(2) + '.feather')
+        mask_1d = cropped_masks[key].flatten()
+
+        feather.write_dataframe(pd.DataFrame(mask_1d), msk_path)
+
+def create_train_test_data(slides_dir, patient_ids, train, train_size, out_dir, RESET = False):
+    """
+    Creates the following directories in the root directory
+    1. A directory defined by the "out_dir"  \n
+    2. Sub-directories named "train" and "val", dependent on the "train"
+       argument inside the created out_dir directory \n
+    3. Sub-sub-directories "slides" and "masks" for storing their respective
+       types of data \n
+
+    Slides are read from the "slides_dir" directory which were created using
+    the generate_and_save_masks function \n
+
+    Arguments: \n
+    slides_dir - string, location of all slides in .png format, created using
+                 as described above \n
+    patient_ids - list, contains all patient ids \n
+    train - bool, when True, creates the "train" sub-directory and when False,
+            creates the "val" sub-directory \n 
+    train_size - float value between 0 and 1, determines the relative size of 
+                 the training set compared to the complete dataset \n 
+    out_dir - string, location where the outputs will be saved \n
+    RESET - bool, when True, deletes the existing "out_dir" directory along
+            with its contents and creates it from scratch \n
+    """     
+    if RESET: 
+        shutil.rmtree(out_dir)
+        bool = True
+    else:
+        bool = False
+
+    if bool:
+        try: os.mkdir(out_dir)
+        except: print(f"Directory {out_dir} exists")
+
+        dir = 'train' if train else 'val'
+        dir = os.path.join(out_dir, dir)
+
+        try: os.mkdir(dir)
+        except: print(f"Directory {dir} exists")
+
+        image_dir = os.path.join(dir, 'slides')  
+        mask_dir = os.path.join(dir, 'masks')      
+
+        try:
+            os.mkdir(image_dir)
+            os.mkdir(mask_dir)
+        except:
+            pass
+
+        shapes = []
+        train_len = int(train_size * len(patient_ids))
+        ids = patient_ids[:train_len] if train else patient_ids[train_len + 1:]
+
+        for patient_id in tq.tqdm(patient_ids):
+            slide_path = os.path.join(slides_dir, f'{patient_id}.png')
+            slide = show_slide(slide_path, return_img = True, ax = None, display = False)
+            mask = load_mask(patient_id)[0]
+            shapes.append(mask.shape)
+            n =  num_cells(patient_id, ANNOTS_DIR)
+
+            x, y = slide.shape[:2]
+
+            if n > 300:
+                split(slide, mask, patient_id, train, out_dir, x//4, y//4)
+            if n < 300 and n > 150:
+                split(slide, mask, patient_id, train, out_dir, x//2, y//2)
+            else:
+                split(slide, mask, patient_id, train, out_dir, x, y)
+
+        shapes_dir = os.path.join(dir, 'shapes.feather')
+        feather.write_dataframe(pd.DataFrame(shapes), shapes_dir)
+
+    num_slides = sum(1 for x in pathlib.Path(out_dir).glob('**/*.png') if x.is_file())
+    print(f"{num_slides} slides were created at {out_dir}")
+
+    num_masks = sum(1 for x in pathlib.Path(out_dir).glob('**/*.feather') if x.is_file())
+    print(f"{num_masks} masks were created at {out_dir}")
+
+#############################################################################################
 # CNN Architecture requirements
+#############################################################################################
 
 from keras.layers import Conv2D, MaxPool2D, Flatten, Dense, Dropout
 from keras.models import Sequential
