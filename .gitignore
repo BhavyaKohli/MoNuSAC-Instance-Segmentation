@@ -13,5 +13,6 @@ monusac/
 monusac/
 monusac_images_and_annotations/
 data/
+final/
 data_part/
 __pycache__/
