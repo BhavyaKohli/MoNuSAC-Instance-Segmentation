@@ -1,3 +1,8 @@
+import tensorflow as tf
+
+# Silence deprecated-function warnings
+tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
+
 # Importing required libraries
 import os, glob, shutil, pathlib
 import numpy as np                      
@@ -82,6 +87,10 @@ def generate_and_save_masks(src = './MoNuSAC_images_and_annotations/',
                             saved in their respective folders. If set to False, they will be 
                             loaded but not saved. (useful in the case of re-writing just the 
                             slides or just the annotations)\n
+
+    Returns: \n
+    patient_ids - list containing all patient_ids \n
+
     #########################################################################################
     Example usage:\n
         dst = './data/',\n
@@ -132,29 +141,39 @@ def generate_and_save_masks(src = './MoNuSAC_images_and_annotations/',
         print("Destination directories already exist. Please rename or delete in case of conflicting names.")
         bool = False
 
-    if bool:        
+    if bool:
+        patient_ids = []      
         for patient_loc in tq.tqdm(patients, unit = 'Patient'):
-            unique = 0
             patient_name = patient_loc[len(data_path):] #Patient name
             patient_label = patient_name[8:12]
             
+
             sub_images = glob.glob(patient_loc + '/*.svs')
 
             for sub_image in sub_images:
                 img = from_svs(sub_image)
                 suffix = '_' + sub_image[-5]
+                patient_ids.append(patient_label + suffix)
 
-                if slides: cv2.imwrite(os.path.join(dst_slides, patient_label + suffix + '.png'), img)
+                if slides and bool: cv2.imwrite(os.path.join(dst_slides, patient_label + suffix + '.png'), img)
                 #shutil.copy(sub_image, os.path.join(dst_slides, patient_label + suffix + '.svs'))
+
+                '''if slides: 
+                    img_path = os.path.join(dst_slides, patient_label + suffix + '.feather')
+                    img_1d = list(img.flatten()) + list(img.shape)
+                    feather.write_dataframe(pd.DataFrame(img_1d), img_path)'''
 
                 xml_file_name  = sub_image[:-4]
                 xml_file_name = xml_file_name+'.xml'
-                if annots: shutil.copy(xml_file_name, os.path.join(dst_annots, patient_label + suffix + '.xml'))
+                if annots and bool: 
+                    annots_path = os.path.join(dst_annots, patient_label + suffix + '.xml')
+                    shutil.copy(xml_file_name, annots_path)
+                
                 tree = ET.parse(xml_file_name)
                 root = tree.getroot()
 
                 for k in range(len(root)):
-
+                    
                     label_to_num = {
                         'Epithelial': '1',
                         'Lymphocyte': '2',
@@ -164,6 +183,7 @@ def generate_and_save_masks(src = './MoNuSAC_images_and_annotations/',
                     }
 
                     for child in root[k]:
+                        unique = 0
                         for x in child:
                             r = x.tag
                             if r == 'Attribute':
@@ -187,18 +207,21 @@ def generate_and_save_masks(src = './MoNuSAC_images_and_annotations/',
                                 unique += 0.4
                                 mask[fill_row_coords, fill_col_coords] = unique
 
-                                mask_path = os.path.join(cell_type_dir, label + '_' + patient_label + suffix  + '.png')
-                                if masks: cv2.imwrite(mask_path, mask)
+                        if masks and bool and np.sum(mask.flatten()) > 0: 
+                            mask_path = os.path.join(cell_type_dir, label[:3].lower() + '_' + patient_label + suffix  + '.mask')
+                            mask_1d = mask.flatten()
+                            mask_1d_shape = mask.shape
+                            mask_1d = list(mask_1d) + list(mask_1d_shape)
+                            feather.write_dataframe(pd.DataFrame(mask_1d), mask_path)
 
-    if slides: 
-        num_slides = sum(1 for x in pathlib.Path(dst_slides).glob('**/*') if x.is_file())
-        print(f"{num_slides} slides were copied to {dst_slides}")
-    if masks: 
-        num_masks = sum(1 for x in pathlib.Path(dst_masks).glob('**/*') if x.is_file())
-        print(f"{num_masks} masks were created at {dst_masks}")
-    if annots: 
-        num_annots = sum(1 for x in pathlib.Path(dst_annots).glob('**/*') if x.is_file())
-        print(f"{num_annots} annotations were copied to {dst_annots}")
+    num_slides = sum(1 for x in pathlib.Path(dst_slides).glob('**/*') if x.is_file())
+    print(f"{num_slides} slides are present in {dst_slides}")
+    
+    num_masks = sum(1 for x in pathlib.Path(dst_masks).glob('**/*') if x.is_file())
+    print(f"{num_masks} masks are present in {dst_masks}")
+    
+    num_annots = sum(1 for x in pathlib.Path(dst_annots).glob('**/*') if x.is_file())
+    print(f"{num_annots} annotations are present in {dst_annots}")
 
 def tif_load(path, reshape = True):
     '''
@@ -218,7 +241,7 @@ def tif_load(path, reshape = True):
     if reshape: img = img.reshape(img.shape[0], img.shape[1], 1)
     return img
 
-def clean_plot(img, ax, title = None, cmap = None):
+def clean_plot(img, ax, title = None, cmap = None, return_mask = False):
     '''
     Creates a plot showing an image without axis ticks.\n
 
@@ -239,20 +262,26 @@ def clean_plot(img, ax, title = None, cmap = None):
 
     #return ax
 
-def show_mask(path, ax):
+def show_mask(path, ax, cmap = "Greys", return_mask = False):
     '''
-    Displays the mask saved as a .png file after loading it using the 
-    matplotlib library.\n
+    Displays the mask saved as a .feather file after loading it using the 
+    feather library.\n
 
     Arguments:\n
-    path - string, path to the .png file\n
+    path - string, path to the .feather file\n
     ax - matplotlib axis object, the image is plotted on this axis\n
 
     Note: \n
     The image is displayed using the "Greys" colormap in matplotlib
     '''
-    img = plt.imread(path)
-    clean_plot(img, ax, "Mask" + " " + path[-10:-4] + "\n" + label_mapping[int(path[13])], "Greys")
+    df = feather.read_dataframe(path)
+    mask_shape = [int(i) for i in df[-3:].values]
+    mask = df[:-3].values.reshape(mask_shape)
+    
+    try: clean_plot(mask, ax, "Mask" + " " + path[-11:-5] + "\n" + label_mapping[int(path[13])], cmap)
+    except: clean_plot(combine_masks(mask), ax, "Mask" + " " + path[-14:-5], cmap)
+
+    if return_mask: return mask
 
 def show_slide(path, ax = None, display = True, return_img = False):
     '''
@@ -391,15 +420,16 @@ def modify_mask_values(mask, value):
             if mask[i][j] > 0: mask[i][j] = value
     return mask
 
-
 #############################################################################################
 # Cropping slides and masks based on number of cells
 #############################################################################################
 
 import pandas as pd
 import feather
+from PIL import Image
+from collections import Counter
 
-def load_mask(patient_id, return_counts = False):
+def get_mask(patient_id, slides_dir = './data/slides/', annots_dir = './data/annots/'):
     global label_map
     
     label_map = {
@@ -409,11 +439,12 @@ def load_mask(patient_id, return_counts = False):
         'Neutrophil': 4
     }
 
-    annotations_path = f'./data/annots/{patient_id}.xml'
+    annotations_path = os.path.join(annots_dir, f'{patient_id}.xml')
 
     tree = ET.parse(annotations_path)
     root = tree.getroot()
-    img = load_image(patient_id)
+    img_path = os.path.join(slides_dir, f'{patient_id}.png')
+    img = show_slide(img_path, return_img = True, ax = None, display = False)
     masks = dict()
     labels = []
     cell_count = [0,0,0,0,0]
@@ -439,7 +470,7 @@ def load_mask(patient_id, return_counts = False):
                     vertex_row_coords = coords[:,0]
                     vertex_col_coords = coords[:,1]
 
-                    fill_row_coords, fill_col_coords = skimage.draw.polygon(vertex_col_coords, vertex_row_coords, binary_mask.shape)
+                    fill_row_coords, fill_col_coords = draw.polygon(vertex_col_coords, vertex_row_coords, binary_mask.shape)
 
                     binary_mask[fill_row_coords, fill_col_coords] = 1
                     masks[count] = (binary_mask, label_id)
@@ -448,17 +479,17 @@ def load_mask(patient_id, return_counts = False):
                     count += 1
                     
     keys = list(masks.keys())
-    net_mask = masks[keys[0]][0]
-    net_labels = [masks[keys[0]][1]]
-    for key in keys[1:]:
+    net_mask = np.stack([masks[key][0] for key in keys], axis = 2)
+    net_mask = net_mask.reshape(net_mask.shape[:3])
+    net_labels = [masks[key][1] for key in keys]
+    '''for key in keys[1:]:
         net_mask = np.concatenate((net_mask, masks[key][0]), axis = 2)
-        net_labels.append(masks[key][1])
+        net_labels.append(masks[key][1])'''
 
     #print(net_mask.shape)
     #print(np.dsplit(net_mask, net_mask.shape[2]).shape)
     
-    if not return_counts: return net_mask.astype(np.bool_), np.array(net_labels)
-    else: return net_mask.astype(np.bool_), np.array(net_labels), cell_count
+    return net_mask.astype(np.bool_), np.array(net_labels), cell_count
     
 def crop_image(slide, height, width):
     img = Image.fromarray(slide)
@@ -485,13 +516,24 @@ def crop_mask(mask, height, width):
     net_masks = dict()
     keys = list(masks.keys())
     subkeys = list(masks[keys[0]].keys())
-    [m[:,:,i] for i in range(m.shape[2])] 
+    #[m[:,:,i] for i in range(m.shape[2])] 
     for i in range(len(subkeys)):    
         net_masks[subkeys[i]] = np.stack(pd.DataFrame(masks).iloc[i].values, 2) 
     
     return net_masks
 
-def split(image, mask, patient_id, train, out_dir, height, width):
+def filter_cropped_mask(mask, mask_labels):
+    df = pd.DataFrame([Counter(mask[:,:,depth].flatten()) for depth in range(mask.shape[2])])
+    ls = ls = [not (True in mask[:,:,i][0,:] or True in mask[:,:,i][-1,:] or True in mask[:,:,i][:,0] or True in mask[:,:,i][:,-1] or True not in mask[:,:,i].flatten()) for i in range(mask.shape[2])]
+
+    df = df[ls]
+
+    return_mask = np.stack([mask[:,:,i] for i in df.index], axis = 2)
+    return_labels = [mask_labels[i] for i in df.index]
+
+    return return_mask, return_labels
+
+def split(image, mask, mask_labels, patient_id, train, out_dir, height, width):
     """
     Splits the input image and mask into smaller parts of shape determined
     by the "height" and "width" arguments \n
@@ -521,12 +563,17 @@ def split(image, mask, patient_id, train, out_dir, height, width):
     cropped_masks = crop_mask(mask, height, width)
 
     for i, key in zip(range(len(cropped_masks)), cropped_masks):
-        msk_path = os.path.join(mask_dir, patient_id + '_' + str(i).zfill(2) + '.feather')
-        mask_1d = cropped_masks[key].flatten()
+        mask_path = os.path.join(mask_dir, patient_id + '_' + str(i).zfill(2) + '.mask')
+        mask_label_path = os.path.join(mask_dir, patient_id + '_' + str(i).zfill(2) + '.label')
+        mask = cropped_masks[key]
+        
+        filtered_mask, filtered_labels= filter_cropped_mask(mask, mask_labels) 
 
-        feather.write_dataframe(pd.DataFrame(mask_1d), msk_path)
+        mask_1d = np.append(filtered_mask.flatten(), filtered_mask.shape)
+        feather.write_dataframe(pd.DataFrame(mask_1d), mask_path)
+        feather.write_dataframe(pd.DataFrame(filtered_labels), mask_label_path)
 
-def create_train_test_data(slides_dir, patient_ids, train, train_size, out_dir, RESET = False):
+def create_train_test_data(slides_dir, train, train_size, out_dir, patient_ids, RESET = False):
     """
     Creates the following directories in the root directory
     1. A directory defined by the "out_dir"  \n
@@ -541,7 +588,6 @@ def create_train_test_data(slides_dir, patient_ids, train, train_size, out_dir, 
     Arguments: \n
     slides_dir - string, location of all slides in .png format, created using
                  as described above \n
-    patient_ids - list, contains all patient ids \n
     train - bool, when True, creates the "train" sub-directory and when False,
             creates the "val" sub-directory \n 
     train_size - float value between 0 and 1, determines the relative size of 
@@ -550,59 +596,49 @@ def create_train_test_data(slides_dir, patient_ids, train, train_size, out_dir, 
     RESET - bool, when True, deletes the existing "out_dir" directory along
             with its contents and creates it from scratch \n
     """     
-    if RESET: 
-        shutil.rmtree(out_dir)
-        bool = True
-    else:
-        bool = False
+    if RESET: shutil.rmtree(out_dir)
+    
+    try: os.mkdir(out_dir)
+    except: print(f"Directory {out_dir} exists")
 
-    if bool:
-        try: os.mkdir(out_dir)
-        except: print(f"Directory {out_dir} exists")
+    dir = 'train' if train else 'val'
+    dir = os.path.join(out_dir, dir)
 
-        dir = 'train' if train else 'val'
-        dir = os.path.join(out_dir, dir)
+    try: os.mkdir(dir)
+    except: print(f"Directory {dir} exists")
 
-        try: os.mkdir(dir)
-        except: print(f"Directory {dir} exists")
+    image_dir = os.path.join(dir, 'slides')  
+    mask_dir = os.path.join(dir, 'masks')      
 
-        image_dir = os.path.join(dir, 'slides')  
-        mask_dir = os.path.join(dir, 'masks')      
+    try:
+        os.mkdir(image_dir)
+        os.mkdir(mask_dir)
+    except:
+        pass
 
-        try:
-            os.mkdir(image_dir)
-            os.mkdir(mask_dir)
-        except:
-            pass
+    train_len = int(train_size * len(patient_ids))
+    ids = patient_ids[:train_len] if train else patient_ids[train_len + 1:]
 
-        shapes = []
-        train_len = int(train_size * len(patient_ids))
-        ids = patient_ids[:train_len] if train else patient_ids[train_len + 1:]
+    for patient_id in tq.tqdm(ids):
+        slide_path = os.path.join(slides_dir, f'{patient_id}.png')
+        slide = show_slide(slide_path, return_img = True, ax = None, display = False)
+        mask, mask_labels, n = get_mask(patient_id)
+        n = np.sum(n)
 
-        for patient_id in tq.tqdm(patient_ids):
-            slide_path = os.path.join(slides_dir, f'{patient_id}.png')
-            slide = show_slide(slide_path, return_img = True, ax = None, display = False)
-            mask = load_mask(patient_id)[0]
-            shapes.append(mask.shape)
-            n =  num_cells(patient_id, ANNOTS_DIR)
+        x, y = slide.shape[:2]
 
-            x, y = slide.shape[:2]
+        if n >= 300:
+            split(slide, mask, mask_labels, patient_id, train, out_dir, x//4, y//4)
+        if n < 300 and n >= 150:
+            split(slide, mask, mask_labels, patient_id, train, out_dir, x//2, y//2)
+        else:
+            split(slide, mask, mask_labels, patient_id, train, out_dir, x, y)
 
-            if n > 300:
-                split(slide, mask, patient_id, train, out_dir, x//4, y//4)
-            if n < 300 and n > 150:
-                split(slide, mask, patient_id, train, out_dir, x//2, y//2)
-            else:
-                split(slide, mask, patient_id, train, out_dir, x, y)
+    num_slides = sum(1 for x in pathlib.Path(dir).glob('**/*.png') if x.is_file())
+    print(f"{num_slides} slides were created at {dir}")
 
-        shapes_dir = os.path.join(dir, 'shapes.feather')
-        feather.write_dataframe(pd.DataFrame(shapes), shapes_dir)
-
-    num_slides = sum(1 for x in pathlib.Path(out_dir).glob('**/*.png') if x.is_file())
-    print(f"{num_slides} slides were created at {out_dir}")
-
-    num_masks = sum(1 for x in pathlib.Path(out_dir).glob('**/*.feather') if x.is_file())
-    print(f"{num_masks} masks were created at {out_dir}")
+    num_masks = sum(1 for x in pathlib.Path(dir).glob('**/*.mask') if x.is_file())
+    print(f"{num_masks - 1} masks were created at {dir}")
 
 #############################################################################################
 # CNN Architecture requirements
