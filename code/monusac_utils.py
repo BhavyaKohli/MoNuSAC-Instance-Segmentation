@@ -555,7 +555,7 @@ def split(image, mask, mask_labels, patient_id, train, out_dir, height, width):
     mask_dir = os.path.join(out_dir, 'train/masks') if train else os.path.join(out_dir, 'val/masks')
 
     for i, piece in enumerate(crop_image(image, height, width)):
-        img = Image.new('RGB', (height, width))
+        img = Image.new('RGB', (width, height))
         img.paste(piece)
         img_path = os.path.join(image_dir , patient_id + '_' + str(i).zfill(2) + '.png')
         img.save(img_path)
@@ -629,7 +629,7 @@ def create_train_test_data(slides_dir, train, train_size, out_dir, patient_ids, 
 
         if n >= 300:
             split(slide, mask, mask_labels, patient_id, train, out_dir, x//4, y//4)
-        if n < 300 and n >= 150:
+        elif n < 300 and n >= 150:
             split(slide, mask, mask_labels, patient_id, train, out_dir, x//2, y//2)
         else:
             split(slide, mask, mask_labels, patient_id, train, out_dir, x, y)
