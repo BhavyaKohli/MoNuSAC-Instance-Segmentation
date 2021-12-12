@@ -15,7 +15,7 @@ import xml.etree.ElementTree as ET
 from skimage import draw
 
 # For creating progress bars for "for" loops
-import tqdm.notebook as tq          
+import tqdm as tq          
 
 # Data locations
 SLIDES_DIR = './data/slides/'
@@ -143,7 +143,7 @@ def generate_and_save_masks(src = './MoNuSAC_images_and_annotations/',
 
     if bool:
         patient_ids = []      
-        for patient_loc in tq.tqdm(patients, unit = 'Patient'):
+        for patient_loc in tq.tqdm(patients, unit = 'Patient', ncols = 100):
             patient_name = patient_loc[len(data_path):] #Patient name
             patient_label = patient_name[8:12]
             
@@ -262,7 +262,7 @@ def clean_plot(img, ax, title = None, cmap = None, return_mask = False):
 
     #return ax
 
-def show_mask(path, ax, cmap = "Greys", return_mask = False):
+def show_mask(path, ax = None, cmap = "Greys", return_mask = True):
     '''
     Displays the mask saved as a .feather file after loading it using the 
     feather library.\n
@@ -278,12 +278,13 @@ def show_mask(path, ax, cmap = "Greys", return_mask = False):
     mask_shape = [int(i) for i in df[-3:].values]
     mask = df[:-3].values.reshape(mask_shape)
     
-    try: clean_plot(mask, ax, "Mask" + " " + path[-11:-5] + "\n" + label_mapping[int(path[13])], cmap)
-    except: clean_plot(combine_masks(mask), ax, "Mask" + " " + path[-14:-5], cmap)
+    if ax != None:
+        try: clean_plot(mask, ax, "Mask" + " " + path[-11:-5] + "\n" + label_mapping[int(path[11])], cmap)
+        except: clean_plot(combine_masks(mask), ax, "Mask" + " " + path[-14:-5], cmap)
 
     if return_mask: return mask
 
-def show_slide(path, ax = None, display = True, return_img = False):
+def show_slide(path, read_mode = 'cv2', ax = None, return_img = True):
     '''
     Displays the slide saved as a .png file after loading it using the 
     open cv library.\n
@@ -292,8 +293,15 @@ def show_slide(path, ax = None, display = True, return_img = False):
     path - string, path to the .png file\n
     ax - matplotlib axis object, the image is plotted on this axis\n
     '''
-    img = cv2.imread(path)
-    if display: clean_plot(img, ax, f'Slide {path[-10:-4]}\nImage shape: {img.shape}')
+
+    if read_mode == 'plt': 
+        img = plt.imread(path)
+        title = path[-13:-4]
+    elif read_mode == 'cv2': 
+        img = cv2.imread(path)
+        title = path[-10:-4]
+
+    if ax != None: clean_plot(img, ax, f'Slide {title}\nImage shape: {img.shape}')
 
     if return_img: return img
 
@@ -373,7 +381,7 @@ def combine_masks(mask, progress = False):
     m = np.dsplit(mask, depth)[0]
 
     if progress:
-        for i in tq.tqdm(range(depth)[1:]):
+        for i in tq.tqdm(range(depth)[1:], ncols = 100):
             m = m + np.dsplit(mask, depth)[i]
     else:
         for i in range(depth)[1:]: 
@@ -436,7 +444,8 @@ def get_mask(patient_id, slides_dir = './data/slides/', annots_dir = './data/ann
         'Epithelial': 1,
         'Lymphocyte': 2,
         'Macrophage': 3,
-        'Neutrophil': 4
+        'Neutrophil': 4,
+        'Description': 'X'
     }
 
     annotations_path = os.path.join(annots_dir, f'{patient_id}.xml')
@@ -524,10 +533,9 @@ def crop_mask(mask, height, width):
 
 def filter_cropped_mask(mask, mask_labels):
     df = pd.DataFrame([Counter(mask[:,:,depth].flatten()) for depth in range(mask.shape[2])])
-    ls = ls = [not (True in mask[:,:,i][0,:] or True in mask[:,:,i][-1,:] or True in mask[:,:,i][:,0] or True in mask[:,:,i][:,-1] or True not in mask[:,:,i].flatten()) for i in range(mask.shape[2])]
+    ls = [not (True in mask[:,:,i][0,:] or True in mask[:,:,i][-1,:] or True in mask[:,:,i][:,0] or True in mask[:,:,i][:,-1] or True not in mask[:,:,i].flatten()) for i in range(mask.shape[2])]
 
     df = df[ls]
-
     return_mask = np.stack([mask[:,:,i] for i in df.index], axis = 2)
     return_labels = [mask_labels[i] for i in df.index]
 
@@ -565,13 +573,25 @@ def split(image, mask, mask_labels, patient_id, train, out_dir, height, width):
     for i, key in zip(range(len(cropped_masks)), cropped_masks):
         mask_path = os.path.join(mask_dir, patient_id + '_' + str(i).zfill(2) + '.mask')
         mask_label_path = os.path.join(mask_dir, patient_id + '_' + str(i).zfill(2) + '.label')
+        mask_shape_path = os.path.join(mask_dir, patient_id + '_' + str(i).zfill(2) + '.shape')
         mask = cropped_masks[key]
         
-        filtered_mask, filtered_labels= filter_cropped_mask(mask, mask_labels) 
+        df = pd.DataFrame([Counter(mask[:,:,depth].flatten()) for depth in range(mask.shape[2])])
+        ls = [not (True in mask[:,:,i][0,:] or True in mask[:,:,i][-1,:] or True in mask[:,:,i][:,0] or True in mask[:,:,i][:,-1] or True not in mask[:,:,i].flatten()) for i in range(mask.shape[2])]
 
-        mask_1d = np.append(filtered_mask.flatten(), filtered_mask.shape)
-        feather.write_dataframe(pd.DataFrame(mask_1d), mask_path)
-        feather.write_dataframe(pd.DataFrame(filtered_labels), mask_label_path)
+        if True in ls: 
+            df = df[ls]
+            filtered_mask = np.stack([mask[:,:,i] for i in df.index], axis = 2)
+            filtered_labels = [mask_labels[i] for i in df.index]
+
+            mask_1d = np.append(filtered_mask.flatten(), filtered_mask.shape)
+            feather.write_dataframe(pd.DataFrame(mask_1d), mask_path)
+            feather.write_dataframe(pd.DataFrame(filtered_labels), mask_label_path)
+
+        else:
+            print(f"{patient_id + '_' + str(i).zfill(2)} has no mask")
+
+        #filtered_mask, filtered_labels= filter_cropped_mask(mask, mask_labels) 
 
 def create_train_test_data(slides_dir, train, train_size, out_dir, patient_ids, RESET = False):
     """
@@ -595,14 +615,16 @@ def create_train_test_data(slides_dir, train, train_size, out_dir, patient_ids, 
     out_dir - string, location where the outputs will be saved \n
     RESET - bool, when True, deletes the existing "out_dir" directory along
             with its contents and creates it from scratch \n
-    """     
-    if RESET: shutil.rmtree(out_dir)
-    
+    """  
+    bool = True   
+
     try: os.mkdir(out_dir)
     except: print(f"Directory {out_dir} exists")
 
     dir = 'train' if train else 'val'
     dir = os.path.join(out_dir, dir)
+
+    if RESET: shutil.rmtree(dir)
 
     try: os.mkdir(dir)
     except: print(f"Directory {dir} exists")
@@ -614,31 +636,32 @@ def create_train_test_data(slides_dir, train, train_size, out_dir, patient_ids, 
         os.mkdir(image_dir)
         os.mkdir(mask_dir)
     except:
-        pass
+        bool = False
 
     train_len = int(train_size * len(patient_ids))
     ids = patient_ids[:train_len] if train else patient_ids[train_len + 1:]
 
-    for patient_id in tq.tqdm(ids):
-        slide_path = os.path.join(slides_dir, f'{patient_id}.png')
-        slide = show_slide(slide_path, return_img = True, ax = None, display = False)
-        mask, mask_labels, n = get_mask(patient_id)
-        n = np.sum(n)
+    if bool:
+        for patient_id in tq.tqdm(ids, ncols = 100):
+            slide_path = os.path.join(slides_dir, f'{patient_id}.png')
+            slide = show_slide(slide_path, return_img = True, ax = None, display = False)
+            mask, mask_labels, n = get_mask(patient_id)
+            n = np.sum(n)
 
-        x, y = slide.shape[:2]
+            x, y = slide.shape[:2]
 
-        if n >= 300:
-            split(slide, mask, mask_labels, patient_id, train, out_dir, x//4, y//4)
-        elif n < 300 and n >= 150:
-            split(slide, mask, mask_labels, patient_id, train, out_dir, x//2, y//2)
-        else:
-            split(slide, mask, mask_labels, patient_id, train, out_dir, x, y)
+            if n >= 300:
+                split(slide, mask, mask_labels, patient_id, train, out_dir, x//4, y//4)
+            elif n < 300 and n >= 150:
+                split(slide, mask, mask_labels, patient_id, train, out_dir, x//2, y//2)
+            else:
+                split(slide, mask, mask_labels, patient_id, train, out_dir, x, y)
 
-    num_slides = sum(1 for x in pathlib.Path(dir).glob('**/*.png') if x.is_file())
+    num_slides = sum(1 for x in pathlib.Path(dir).glob('**/*.png'))
     print(f"{num_slides} slides were created at {dir}")
 
-    num_masks = sum(1 for x in pathlib.Path(dir).glob('**/*.mask') if x.is_file())
-    print(f"{num_masks - 1} masks were created at {dir}")
+    num_masks = sum(1 for x in pathlib.Path(dir).glob('**/*.mask'))
+    print(f"{num_masks} masks were created at {dir}")
 
 #############################################################################################
 # CNN Architecture requirements
