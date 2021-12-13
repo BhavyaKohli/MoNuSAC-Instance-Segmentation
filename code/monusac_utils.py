@@ -273,6 +273,7 @@ def show_mask(path, ax = None, cmap = "Greys", return_mask = True):
 
     Note: \n
     The image is displayed using the "Greys" colormap in matplotlib
+    by default
     '''
     df = feather.read_dataframe(path)
     mask_shape = [int(i) for i in df[-3:].values]
@@ -388,15 +389,13 @@ def combine_masks(mask, progress = False):
             m = m + np.dsplit(mask, depth)[i]
     return m
 
-def collect_masks_for_id(patient_id):
+def collect_masks_for_id(patient_id, masks_list):
     '''
     Collects all types of masks for the specified patient id from their 
     respective directories and merges them into one 2D array.\n
     '''
-    ls = find_in_list(patient_id, MASKS_ALL)
-    net_mask = tif_load(ls[0])
-    for path in ls[1:]:
-        net_mask += tif_load(path)
+    ls = find_in_list(patient_id, masks_list)
+    net_mask = np.stack([show_mask(path) for path in ls], 2)[:,:,:,0]
     return net_mask
 
 def split_mask_by_color(mask):
@@ -453,7 +452,7 @@ def get_mask(patient_id, slides_dir = './data/slides/', annots_dir = './data/ann
     tree = ET.parse(annotations_path)
     root = tree.getroot()
     img_path = os.path.join(slides_dir, f'{patient_id}.png')
-    img = show_slide(img_path, return_img = True, ax = None, display = False)
+    img = show_slide(img_path, return_img = True, ax = None)
     masks = dict()
     labels = []
     cell_count = [0,0,0,0,0]
@@ -531,17 +530,30 @@ def crop_mask(mask, height, width):
     
     return net_masks
 
-def filter_cropped_mask(mask, mask_labels):
+def filter_cropped_mask(mask, mask_labels, type):
     df = pd.DataFrame([Counter(mask[:,:,depth].flatten()) for depth in range(mask.shape[2])])
-    ls = [not (True in mask[:,:,i][0,:] or True in mask[:,:,i][-1,:] or True in mask[:,:,i][:,0] or True in mask[:,:,i][:,-1] or True not in mask[:,:,i].flatten()) for i in range(mask.shape[2])]
+    
+    if type == 'all': 
+        ls = [not (True in mask[:,:,i][0,:] or True in mask[:,:,i][-1,:] or True in mask[:,:,i][:,0] or True in mask[:,:,i][:,-1] or True not in mask[:,:,i].flatten()) for i in range(mask.shape[2])]   
+    elif type == 'edges': 
+        ls = [not (True in mask[:,:,i][0,:] or True in mask[:,:,i][-1,:] or True in mask[:,:,i][:,0] or True in mask[:,:,i][:,-1]) for i in range(mask.shape[2])]
+    elif type == 'zeros': 
+        ls = [True in mask[:,:,i].flatten() for i in range(mask.shape[2])]
+    elif type == None:
+        return mask, mask_labels
+    else:
+        print(f"Unknown argument for \"type\" {type}")
+    
+    if True in ls:
+        df = df[ls]
+        return_mask = np.stack([mask[:,:,i] for i in df.index], axis = 2)
+        return_labels = [mask_labels[i] for i in df.index]
 
-    df = df[ls]
-    return_mask = np.stack([mask[:,:,i] for i in df.index], axis = 2)
-    return_labels = [mask_labels[i] for i in df.index]
+        return return_mask, return_labels
+    else:
+        return None, None
 
-    return return_mask, return_labels
-
-def split(image, mask, mask_labels, patient_id, train, out_dir, height, width):
+def split(image, mask, mask_labels, mask_filter_type, patient_id, train, out_dir, height, width):
     """
     Splits the input image and mask into smaller parts of shape determined
     by the "height" and "width" arguments \n
@@ -551,6 +563,8 @@ def split(image, mask, mask_labels, patient_id, train, out_dir, height, width):
             as an array \n
     mask - numpy array of shape (X,Y,N), contains the corresponding mask 
            of the image argument \n
+    mask_labels - list/1d array, contains labels corresponding to each layer
+                  of masks stored in mask \n
     patient_id - string, the corresponding patient id for the image and mask
                  described above \n
     train - bool, determines whether to create the "train" or "val" sub-directory \n
@@ -562,13 +576,8 @@ def split(image, mask, mask_labels, patient_id, train, out_dir, height, width):
     image_dir = os.path.join(out_dir, 'train/slides') if train else os.path.join(out_dir, 'val/slides')
     mask_dir = os.path.join(out_dir, 'train/masks') if train else os.path.join(out_dir, 'val/masks')
 
-    for i, piece in enumerate(crop_image(image, height, width)):
-        img = Image.new('RGB', (width, height))
-        img.paste(piece)
-        img_path = os.path.join(image_dir , patient_id + '_' + str(i).zfill(2) + '.png')
-        img.save(img_path)
-
     cropped_masks = crop_mask(mask, height, width)
+    exceptions = []
 
     for i, key in zip(range(len(cropped_masks)), cropped_masks):
         mask_path = os.path.join(mask_dir, patient_id + '_' + str(i).zfill(2) + '.mask')
@@ -576,22 +585,38 @@ def split(image, mask, mask_labels, patient_id, train, out_dir, height, width):
         mask_shape_path = os.path.join(mask_dir, patient_id + '_' + str(i).zfill(2) + '.shape')
         mask = cropped_masks[key]
         
-        df = pd.DataFrame([Counter(mask[:,:,depth].flatten()) for depth in range(mask.shape[2])])
-        ls = [not (True in mask[:,:,i][0,:] or True in mask[:,:,i][-1,:] or True in mask[:,:,i][:,0] or True in mask[:,:,i][:,-1] or True not in mask[:,:,i].flatten()) for i in range(mask.shape[2])]
-
-        if True in ls: 
-            df = df[ls]
-            filtered_mask = np.stack([mask[:,:,i] for i in df.index], axis = 2)
-            filtered_labels = [mask_labels[i] for i in df.index]
-
+        filtered_mask, filtered_labels = filter_cropped_mask(mask, mask_labels, mask_filter_type)
+        
+        if type(filtered_mask) != type(None):
             mask_1d = np.append(filtered_mask.flatten(), filtered_mask.shape)
             feather.write_dataframe(pd.DataFrame(mask_1d), mask_path)
             feather.write_dataframe(pd.DataFrame(filtered_labels), mask_label_path)
-
         else:
-            print(f"{patient_id + '_' + str(i).zfill(2)} has no mask")
+            print(f"{patient_id}_{str(i).zfill(2)} has no mask")
+            exceptions.append(patient_id)
 
-        #filtered_mask, filtered_labels= filter_cropped_mask(mask, mask_labels) 
+    if patient_id not in exceptions:
+        for i, piece in enumerate(crop_image(image, height, width)):
+            img = Image.new('RGB', (width, height))
+            img.paste(piece)
+            img_path = os.path.join(image_dir , patient_id + '_' + str(i).zfill(2) + '.png')
+            cv2.imwrite(img_path, np.array(img))
+
+    '''        df = pd.DataFrame([Counter(mask[:,:,depth].flatten()) for depth in range(mask.shape[2])])
+            ls = [not (True in mask[:,:,i][0,:] or True in mask[:,:,i][-1,:] or True in mask[:,:,i][:,0] or True in mask[:,:,i][:,-1] or True not in mask[:,:,i].flatten()) for i in range(mask.shape[2])]
+
+            if True in ls: 
+                df = df[ls]
+                filtered_mask = np.stack([mask[:,:,i] for i in df.index], axis = 2)
+                filtered_labels = [mask_labels[i] for i in df.index]
+
+                mask_1d = np.append(filtered_mask.flatten(), filtered_mask.shape)
+                feather.write_dataframe(pd.DataFrame(mask_1d), mask_path)
+                feather.write_dataframe(pd.DataFrame(filtered_labels), mask_label_path)
+
+            else:
+                print(f"{patient_id + '_' + str(i).zfill(2)} has no mask")
+    '''
 
 def create_train_test_data(slides_dir, train, train_size, out_dir, patient_ids, RESET = False):
     """
@@ -644,18 +669,18 @@ def create_train_test_data(slides_dir, train, train_size, out_dir, patient_ids, 
     if bool:
         for patient_id in tq.tqdm(ids, ncols = 100):
             slide_path = os.path.join(slides_dir, f'{patient_id}.png')
-            slide = show_slide(slide_path, return_img = True, ax = None, display = False)
+            slide = show_slide(slide_path, read_mode = 'cv2', return_img = True, ax = None)
             mask, mask_labels, n = get_mask(patient_id)
             n = np.sum(n)
 
             x, y = slide.shape[:2]
 
             if n >= 300:
-                split(slide, mask, mask_labels, patient_id, train, out_dir, x//4, y//4)
+                split(slide, mask, mask_labels, 'zeros', patient_id, train, out_dir, x//4, y//4)
             elif n < 300 and n >= 150:
-                split(slide, mask, mask_labels, patient_id, train, out_dir, x//2, y//2)
+                split(slide, mask, mask_labels, 'zeros', patient_id, train, out_dir, x//2, y//2)
             else:
-                split(slide, mask, mask_labels, patient_id, train, out_dir, x, y)
+                split(slide, mask, mask_labels, 'zeros', patient_id, train, out_dir, x, y)
 
     num_slides = sum(1 for x in pathlib.Path(dir).glob('**/*.png'))
     print(f"{num_slides} slides were created at {dir}")
