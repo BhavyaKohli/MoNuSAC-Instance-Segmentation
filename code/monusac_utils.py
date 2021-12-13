@@ -724,4 +724,3 @@ def estimate_num_cells(image, weights_path):
         image = cv2.resize(image, (512,512))
     return model.predict(image)[0][0]
 
-
