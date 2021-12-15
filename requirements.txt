@@ -1,5 +1,6 @@
 Keras==2.2.5
 feather_format==0.4.1
+tensorflow==1.15.0
 tensorflow_gpu==1.15.0
 h5py==2.10.0
 matplotlib==3.5.0
