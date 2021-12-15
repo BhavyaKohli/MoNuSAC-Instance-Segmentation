@@ -264,14 +264,18 @@ def clean_plot(img, ax, title = None, cmap = None, return_mask = False):
 
 def show_mask(path, ax = None, cmap = "Greys", return_mask = True):
     '''
-    Displays the mask saved as a .feather file after loading it using the 
-    feather library.\n
+    If an axis is provided, displays the mask saved as a .mask file after 
+    loading it using the feather library. Optionally returns the loaded 
+    array if return_mask is set to True.\n
 
     Arguments:\n
-    path - string, path to the .feather file\n
+    path - string, path to the .mask file\n
     ax - matplotlib axis object, the image is plotted on this axis\n
+    cmap - string, should be a valid cmap option in the matplotlib
+           library\n
+    return_mask - bool, if True, returns the mask file loaded\n
 
-    Note: \n
+    Note:\n
     The image is displayed using the "Greys" colormap in matplotlib
     by default
     '''
@@ -285,24 +289,31 @@ def show_mask(path, ax = None, cmap = "Greys", return_mask = True):
 
     if return_mask: return mask
 
-def show_slide(path, read_mode = 'cv2', ax = None, return_img = True):
+def show_slide(path, return_img = True, read_mode = 'cv2', ax = None, shape = True):
     '''
-    Displays the slide saved as a .png file after loading it using the 
-    open cv library.\n
+    If an axis is provided, displays the slide saved as a .png file after 
+    loading it using the open-cv or matplotlib library depending on the 
+    "read_mode" argument.\n
 
     Arguments:\n
     path - string, path to the .png file\n
+    return_slide - bool, if True, returns the image file loaded\n
+    read_mode - string, should be one of "cv2" or "plt". Determines the
+                python module which will be used for plotting the image\n
     ax - matplotlib axis object, the image is plotted on this axis\n
+    shape - bool, if True, shows the shape of the image in the figure
     '''
 
     if read_mode == 'plt': 
         img = plt.imread(path)
-        title = path[-13:-4]
     elif read_mode == 'cv2': 
         img = cv2.imread(path)
-        title = path[-10:-4]
-
-    if ax != None: clean_plot(img, ax, f'Slide {title}\nImage shape: {img.shape}')
+    else:
+        print(f"Incorrect option \"{read_mode}\" for read_mode. Please choose either \"plt\" or \"cv2\" for loading the image with the matplotlib and open-cv libraries respectively")
+        return
+    title = f"Slide " + path.split('\\')[-1].split('.')[0]
+    if shape: title += f"\nImage shape: {img.shape}"
+    if ax != None: clean_plot(img, ax, title)
 
     if return_img: return img
 
@@ -313,7 +324,7 @@ def find_in_list(id, list):
     Arguments:\n
     id - string, contains the string the function will find in all elements
          of "list"\n
-    list - list\n
+    list - list which will be searched\n
 
     Returns:\n
     List containing all elements in the list "list" which contain "id"
@@ -324,10 +335,10 @@ def find_in_list(id, list):
 
     return [list[i] for i in indices]
 
-def num_cells(patient_id, annots_dir):
+def num_cells(patient_id, annots_dir, sum = True):
     '''
-    Returns the total number of cells annotated for the slide with the given
-    patient id\n
+    Returns the total number of cells annotated for the uncropped slide with 
+    the given patient id\n
 
     Arguments:\n
     patient_id - string, uniquely determines the slide for which the number
@@ -362,7 +373,8 @@ def num_cells(patient_id, annots_dir):
                 if r == 'Region':
                     cell_count[label_map[label]] = cell_count[label_map[label]]+1
 
-    return np.sum(cell_count)
+    if sum: cell_count = np.sum(cell_count)
+    return cell_count
 
 def combine_masks(mask, progress = False):
     '''
@@ -395,7 +407,7 @@ def collect_masks_for_id(patient_id, masks_list):
     respective directories and merges them into one 2D array.\n
     '''
     ls = find_in_list(patient_id, masks_list)
-    net_mask = np.stack([show_mask(path) for path in ls], 2)[:,:,:,0]
+    net_mask = np.stack([show_mask(path) for path in ls], axis = 2)[:,:,:,0]
     return net_mask
 
 def split_mask_by_color(mask):
@@ -420,8 +432,14 @@ def split_mask_by_color(mask):
 def modify_mask_values(mask, value):
     '''
     Returns a mask in which all non-zero values of the input mask are replaced 
-    by the argument "value"\n
+    by a single value which is set by the user\n
     '''
+    try: 
+        assert mask.shape[2] > 1
+        mask = combine_masks(mask)
+    except: 
+        pass
+
     for i in range(len(mask)):
         for j in range(len(mask[0])):
             if mask[i][j] > 0: mask[i][j] = value
@@ -437,6 +455,24 @@ from PIL import Image
 from collections import Counter
 
 def get_mask(patient_id, slides_dir = './data/slides/', annots_dir = './data/annots/'):
+    '''
+    Returns mask of shape (X,Y,N), corresponding mask labels of shape (N,1),
+    and cell counts measuring number of cells of each type in a list of length 
+    5, where indices 1-4 denote the numbers of cells of the corresponding type.\n
+
+    Arguments:
+    patient_id - string, uniquely determines the patient and the corresponding
+                 slide which has to be loaded\n
+    slides_dir - path/string, location where uncropped slides are stored\n
+    annots_dir - path/string, location where annotation .xml files are stored\n
+
+    Returns:\n
+    net_mask - array, contains the mask created using the skimage library and the
+               annotations corresponding to the patient_id\n
+    net_labels - array, contains corresponding labels to each of the N masks in 
+                 net_mask\n
+    cell_count - list, contains number of cells of each type 
+    '''
     global label_map
     
     label_map = {
@@ -500,6 +536,10 @@ def get_mask(patient_id, slides_dir = './data/slides/', annots_dir = './data/ann
     return net_mask.astype(np.bool_), np.array(net_labels), cell_count
     
 def crop_image(slide, height, width):
+    '''
+    Returns a generator which stores the cropped images of the original
+    "slide" according to the dimensions set by the user.\n
+    '''
     img = Image.fromarray(slide)
     img_width, img_height = img.size
     for i in range(img_height//height):
@@ -508,6 +548,10 @@ def crop_image(slide, height, width):
             yield img.crop(box)
 
 def crop_mask(mask, height, width):
+    '''
+    Similar to crop_image, but specifically for masks, which are 3D arrays 
+    of depth > 3, such as a mask of shape (512,512,321)  
+    '''
     masks = dict()
     net_masks = dict()
     
@@ -531,6 +575,23 @@ def crop_mask(mask, height, width):
     return net_masks
 
 def filter_cropped_mask(mask, mask_labels, type):
+    '''
+    Filters the input mask according to the argument "type".\n
+    Post filtering, it is possible that some layers of the cropped
+    mask have no cells left, i.e. they store only zeros.\n
+    Setting type to "zeros" gets rid of these empty layers and returns
+    the remaining mask.\n
+    Additionally, some cells might have been incompletely cut-off due
+    to the cropping and setting type to "edges" removes those layers
+    which have such cells.\n
+    Setting type to "all" filters out both the empty layers and the 
+    incomplete cells on the edges.\n
+    All this filtering is also applied to the mask labels so as to maintain
+    correctness (if the layer containing an Epithelial cell is removed, 
+    the corresponding label has to be removed as well).\n
+    Setting type to None returns the mask and its corresponding labels
+    as is, without any modifications.\n
+    '''
     df = pd.DataFrame([Counter(mask[:,:,depth].flatten()) for depth in range(mask.shape[2])])
     
     if type == 'all': 
@@ -556,19 +617,19 @@ def filter_cropped_mask(mask, mask_labels, type):
 def split(image, mask, mask_labels, mask_filter_type, patient_id, train, out_dir, height, width):
     """
     Splits the input image and mask into smaller parts of shape determined
-    by the "height" and "width" arguments \n
+    by the "height" and "width" arguments.\n
 
-    Arguments: \n
+    Arguments:\n
     image - numpy array of shape (X,Y,3), contains the image of a slide 
-            as an array \n
+            as an array\n
     mask - numpy array of shape (X,Y,N), contains the corresponding mask 
-           of the image argument \n
+           of the image argument\n
     mask_labels - list/1d array, contains labels corresponding to each layer
-                  of masks stored in mask \n
+                  of masks stored in mask\n
     patient_id - string, the corresponding patient id for the image and mask
-                 described above \n
+                 described above\n
     train - bool, determines whether to create the "train" or "val" sub-directory \n
-    height, width - integers, determine the shape of the output images \n
+    height, width - integers, determine the shape of the output images\n
 
     All smaller images are saved using the _00, _01,... suffixes after the 
     patient_id.
@@ -620,26 +681,26 @@ def split(image, mask, mask_labels, mask_filter_type, patient_id, train, out_dir
 
 def create_train_test_data(slides_dir, train, train_size, out_dir, patient_ids, RESET = False):
     """
-    Creates the following directories in the root directory
-    1. A directory defined by the "out_dir"  \n
+    Creates the following directories in the root directory\n
+    1. A directory defined by the "out_dir"\n
     2. Sub-directories named "train" and "val", dependent on the "train"
-       argument inside the created out_dir directory \n
+       argument inside the created out_dir directory\n
     3. Sub-sub-directories "slides" and "masks" for storing their respective
-       types of data \n
+       types of data\n
 
     Slides are read from the "slides_dir" directory which were created using
-    the generate_and_save_masks function \n
+    the generate_and_save_masks function.\n
 
-    Arguments: \n
+    Arguments:\n
     slides_dir - string, location of all slides in .png format, created using
-                 as described above \n
+                 as described above\n
     train - bool, when True, creates the "train" sub-directory and when False,
-            creates the "val" sub-directory \n 
+            creates the "val" sub-directory\n 
     train_size - float value between 0 and 1, determines the relative size of 
-                 the training set compared to the complete dataset \n 
-    out_dir - string, location where the outputs will be saved \n
+                 the training set compared to the complete dataset\n 
+    out_dir - string, location where the outputs will be saved\n
     RESET - bool, when True, deletes the existing "out_dir" directory along
-            with its contents and creates it from scratch \n
+            with its contents and creates it from scratch\n
     """  
     bool = True   
 
