@@ -399,7 +399,7 @@ def combine_masks(mask, progress = False):
     else:
         for i in range(depth)[1:]: 
             m = m + np.dsplit(mask, depth)[i]
-    return m
+    return np.array(m, dtype = np.uint8)
 
 def collect_masks_for_id(patient_id, masks_list):
     '''
@@ -600,7 +600,7 @@ def filter_cropped_mask(mask, mask_labels, type):
         ls = [not (True in mask[:,:,i][0,:] or True in mask[:,:,i][-1,:] or True in mask[:,:,i][:,0] or True in mask[:,:,i][:,-1]) for i in range(mask.shape[2])]
     elif type == 'zeros': 
         ls = [True in mask[:,:,i].flatten() for i in range(mask.shape[2])]
-    elif type == None:
+    elif type == 'none' or type == None:
         return mask, mask_labels
     else:
         print(f"Unknown argument for \"type\" {type}")
