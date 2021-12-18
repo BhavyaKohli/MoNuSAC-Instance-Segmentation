@@ -607,9 +607,13 @@ def filter_cropped_mask(mask, mask_labels, type):
     
     if True in ls:
         df = df[ls]
-        return_mask = np.stack([mask[:,:,i] for i in df.index], axis = 2)
-        return_labels = [mask_labels[i] for i in df.index]
+        try: return_mask = np.stack([mask[:,:,i] for i in df.index], axis = 2)
+        except: print("Invalid Mask")
 
+        try: return_labels = [mask_labels[i] for i in df.index]
+        except: print("Invalid Labels")
+
+        assert len(return_labels) == return_mask.shape[2], "An error has occurred, number of labels does not match the number of individual masks"
         return return_mask, return_labels
     else:
         return None, None
