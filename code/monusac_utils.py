@@ -753,39 +753,20 @@ def create_train_test_data(slides_dir, train, train_size, out_dir, patient_ids, 
     num_masks = sum(1 for x in pathlib.Path(dir).glob('**/*.mask'))
     print(f"{num_masks} masks were created at {dir}")
 
-#############################################################################################
-# CNN Architecture requirements
-#############################################################################################
+from PIL import ImageOps
 
-from keras.layers import Conv2D, MaxPool2D, Flatten, Dense, Dropout
-from keras.models import Sequential
+# Function for padding an image to a given size
+def resize_with_padding(img, expected_size):
+    try:
+        img = Image.fromarray(img)
+    except:
+        pass
 
-def create_model(weights_path):
-    '''
-    Returns a CNN model with pre-loaded weights.\n
-    The model was trained using 512x512 sized images and so any inputs to it should
-    be resized appropriately using cv2.resize(image, (512,512))
-    '''
-    model = Sequential([
-        Conv2D(10, (5,5), input_shape = (512, 512, 1), data_format = "channels_last"),
-        MaxPool2D((3,3)),
-        Conv2D(5, (3,3)),
-        MaxPool2D((3,3)),
-        Flatten(),
-        Dropout(0.2),
-        Dense(8),
-        Dense(1)
-    ])
-    return model.load_weights(weights_path)
-
-def estimate_num_cells(image, weights_path):
-    '''
-    Estimates the number of cells in the argument image using a CNN
-    model created using the create_model function with weights 
-    specified using the weights_path argument.
-    '''
-    model = create_model(weights_path)
-    if image.shape[:2] != (512,512):
-        image = cv2.resize(image, (512,512))
-    return model.predict(image)[0][0]
+    img.thumbnail((expected_size[0], expected_size[1]))
+    delta_width = expected_size[0] - img.size[0]
+    delta_height = expected_size[1] - img.size[1]
+    pad_width = delta_width // 2
+    pad_height = delta_height // 2
+    padding = (pad_width, pad_height, delta_width - pad_width, delta_height - pad_height)
+    return np.array(ImageOps.expand(img, padding))
 
