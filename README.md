@@ -33,4 +33,6 @@ Directory structure:
 
 This repository contains my code for using the Mask R-CNN model [(Waleed Abdulla et al.)](https://github.com/matterport/Mask_RCNN) for performing cell nuclei instance segmentation and classification.)
 
-The model trained for 15 epochs performs reasonably well on lymphocyte, epithelial and neutrophils but has trouble detecting/recognizing macrophages.  
+The model trained for 15 epochs performs reasonably well on lymphocyte, epithelial and neutrophils but has trouble detecting/recognizing macrophages.
+
+An interesting discovery - during dataset handling, I found that slide masks of shape HxWxN (N number of cells) could be saved in kBs using the `feather` library where it used hunreds of MBs using npy or any other format.
